@@ -1,0 +1,13 @@
+dist/
+node_modules/
+coverage/
+src/prisma/generated/
+prisma/migrations/
+package-lock.json
+
+# Authored docs / specs — not code-formatted
+.claude/
+CLAUDE.md
+ROADMAP.md
+TZ-task-management-backend.md
+handoff.md

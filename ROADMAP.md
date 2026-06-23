@@ -7,8 +7,8 @@
 ## Current Status
 
 - **Current Phase:** Phase 0 — Foundations
-- **Last Session:** _none yet (scaffolding only)_
-- **Next Task:** Phase 0 → `package.json` + `tsconfig.json` + base npm scripts
+- **Last Session:** 2026-06-23
+- **Next Task:** Phase 0 → Fastify skeleton — `src/app.ts` (instance + plugin registration), `src/server.ts` (bootstrap/listen)
 
 ---
 
@@ -26,8 +26,8 @@ These lock the TZ §12 open questions (per `CLAUDE.md`). Do not re-litigate duri
 
 ## Phase 0 — Foundations
 
-- [ ] `package.json` + `tsconfig.json` + npm scripts (`dev`, `build`, `test`, `lint`)
-- [ ] ESLint + Prettier config
+- [x] `package.json` + `tsconfig.json` + npm scripts (`dev`, `build`, `test`, `lint`)
+- [x] ESLint + Prettier config
 - [ ] Fastify skeleton — `src/app.ts` (instance + plugin registration), `src/server.ts` (bootstrap/listen)
 - [ ] Config/env parsing + validation at boot — `src/config/`
 - [ ] Prisma init + Postgres via `docker-compose` (db + app services)
