@@ -12,6 +12,7 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { LoggerOptions } from 'pino';
 import { config, isDev } from './config/index.js';
+import prismaPlugin from './plugins/prisma.js';
 
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
@@ -53,14 +54,22 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   });
 
   // --- Plugins ---------------------------------------------------------------
-  // Base plugins (helmet, cors, rate-limit, swagger, error handler) register
-  // here in the "Base plugins" Phase 0 task.
+  // Data access. Base plugins (helmet, cors, rate-limit, swagger, error handler)
+  // register here in the "Base plugins" Phase 0 task.
+  await app.register(prismaPlugin);
 
   // --- Routes ----------------------------------------------------------------
-  // Liveness/readiness probe. A real readiness check (DB ping) is added once
-  // Prisma is wired; for the skeleton this confirms the process is up.
-  app.get('/health', async () => {
-    return { status: 'ok', uptime: process.uptime() };
+  // Liveness/readiness probe. Liveness always returns ok if the process is up;
+  // readiness additionally pings the database so orchestrators don't route
+  // traffic to an instance that can't reach its DB.
+  app.get('/health', async (_request, reply) => {
+    try {
+      await app.prisma.$queryRaw`SELECT 1`;
+      return { status: 'ok', uptime: process.uptime(), db: 'up' };
+    } catch (err) {
+      app.log.error({ err }, 'health check: database unreachable');
+      return reply.status(503).send({ status: 'degraded', uptime: process.uptime(), db: 'down' });
+    }
   });
 
   // Feature modules register under `/api/v1` starting in Phase 1.

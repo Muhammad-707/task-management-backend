@@ -8,7 +8,7 @@
 
 - **Current Phase:** Phase 0 — Foundations
 - **Last Session:** 2026-06-23
-- **Next Task:** Phase 0 → Prisma init + Postgres via `docker-compose` (db + app services)
+- **Next Task:** Phase 0 → Base plugins — pino logging, centralized error handler, `@fastify/swagger` at `/docs`
 
 ---
 
@@ -30,9 +30,9 @@ These lock the TZ §12 open questions (per `CLAUDE.md`). Do not re-litigate duri
 - [x] ESLint + Prettier config
 - [x] Fastify skeleton — `src/app.ts` (instance + plugin registration), `src/server.ts` (bootstrap/listen)
 - [x] Config/env parsing + validation at boot — `src/config/`
-- [ ] Prisma init + Postgres via `docker-compose` (db + app services)
+- [x] Prisma init + Postgres via `docker-compose` (db + app services)
 - [ ] Base plugins — pino logging, centralized error handler, `@fastify/swagger` at `/docs`
-- [ ] `GET /health` endpoint
+- [x] `GET /health` endpoint
 - [ ] Vitest + Supertest test harness
 - [ ] CI pipeline (lint + build + test)
 

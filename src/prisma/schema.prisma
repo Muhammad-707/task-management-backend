@@ -1,0 +1,23 @@
+// Prisma schema — Task Management Backend.
+//
+// Datasource + generator only for now. The domain models (User, Workspace,
+// Project, State, Issue, …) land in the Phase 1 "Prisma schema" task, where the
+// first migration is created. Keeping this model-free lets `prisma generate`
+// and the docker-compose DB come up cleanly during Phase 0.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// TEMPORARY placeholder. Prisma refuses to generate a client from a model-free
+// schema, and the real domain models + first migration are the Phase 1 task.
+// This single throwaway model lets `prisma generate` succeed in Phase 0; it is
+// removed when the Phase 1 schema lands. No migration is run against it.
+model PrismaInitPlaceholder {
+  id Int @id @default(autoincrement())
+}
