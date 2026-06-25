@@ -87,6 +87,7 @@ model Workspace {
   projects Project[]
   labels   Label[]
   issues   Issue[]
+  cycles   Cycle[]
 }
 
 model WorkspaceMember {
@@ -120,6 +121,7 @@ model Project {
   states    State[]
   issues    Issue[]
   labels    Label[]
+  cycles    Cycle[]
 
   @@unique([workspace_id, identifier])
   @@index([workspace_id])
@@ -166,6 +168,7 @@ model Issue {
   state_id        String
   priority        IssuePriority @default(none)
   parent_id       String?
+  cycle_id        String?
   estimate_points Float?
   start_date      DateTime?
   due_date        DateTime?
@@ -179,6 +182,7 @@ model Issue {
   workspace  Workspace       @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   project    Project         @relation(fields: [project_id], references: [id], onDelete: Cascade)
   state      State           @relation(fields: [state_id], references: [id])
+  cycle      Cycle?          @relation(fields: [cycle_id], references: [id], onDelete: SetNull)
   created_by User            @relation("IssueCreatedBy", fields: [created_by_id], references: [id])
   parent     Issue?          @relation("SubIssue", fields: [parent_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   children   Issue[]         @relation("SubIssue")
@@ -190,6 +194,7 @@ model Issue {
   @@index([workspace_id])
   @@index([project_id])
   @@index([state_id])
+  @@index([cycle_id])
   @@index([created_by_id])
   @@index([parent_id])
   @@index([priority])
@@ -258,4 +263,23 @@ model Comment {
   @@index([issue_id])
   @@index([author_id])
   @@index([deleted_at])
+}
+
+model Cycle {
+  id           String    @id @default(uuid())
+  workspace_id String
+  project_id   String
+  name         String
+  description  String?
+  start_date   DateTime?
+  end_date     DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  issues    Issue[]
+
+  @@index([workspace_id])
+  @@index([project_id])
 }
