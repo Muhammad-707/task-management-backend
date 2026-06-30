@@ -11,6 +11,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { LoggerOptions } from 'pino';
+import { createRequire } from 'node:module';
 import { config, isDev, isProd } from './config/index.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import swaggerPlugin from './plugins/swagger.js';
@@ -26,6 +27,16 @@ import { issueRoutes } from './modules/issues/routes.js';
 import { commentRoutes } from './modules/comments/routes.js';
 import { cycleRoutes } from './modules/cycles/routes.js';
 import { moduleRoutes } from './modules/modules/routes.js';
+
+/** True when the optional `pino-pretty` transport can be resolved at runtime. */
+function isPinoPrettyAvailable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
@@ -45,7 +56,12 @@ function defaultLogger(): LoggerOptions | boolean {
 
   const level = config.LOG_LEVEL ?? (isDev ? 'debug' : 'info');
 
-  if (isDev) {
+  // Pretty-print only in development AND only when pino-pretty is actually
+  // installed. In production it is omitted (devDependency, pruned by
+  // `npm install --omit=dev`); guarding here prevents a hard crash if the
+  // environment is misconfigured (e.g. NODE_ENV left at its development
+  // default on a production host).
+  if (isDev && isPinoPrettyAvailable()) {
     return {
       level,
       transport: {
