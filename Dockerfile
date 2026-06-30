@@ -10,7 +10,7 @@ WORKDIR /app
 # OpenSSL is required by Prisma's query engine.
 RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install
 
 # --- build -------------------------------------------------------------------
 FROM deps AS build
