@@ -11,7 +11,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { LoggerOptions } from 'pino';
-import { config, isDev } from './config/index.js';
+import { config, isDev, isProd } from './config/index.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
@@ -39,6 +39,10 @@ export interface BuildAppOptions {
  * every log line).
  */
 function defaultLogger(): LoggerOptions | boolean {
+  if (isProd) {
+    return true;
+  }
+
   const level = config.LOG_LEVEL ?? (isDev ? 'debug' : 'info');
 
   if (isDev) {
