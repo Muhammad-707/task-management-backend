@@ -24,6 +24,8 @@ export const ACTIVITY_ACTIONS = {
   COMMENT_CREATED: 'comment.created',
   COMMENT_UPDATED: 'comment.updated',
   COMMENT_DELETED: 'comment.deleted',
+  ATTACHMENT_ADDED: 'issue.attachment_added',
+  ATTACHMENT_REMOVED: 'issue.attachment_removed',
 } as const;
 
 export interface ActivityEntry {

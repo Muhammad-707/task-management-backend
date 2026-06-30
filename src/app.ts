@@ -15,6 +15,7 @@ import { config, isDev } from './config/index.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
+import storagePlugin from './plugins/storage.js';
 import authPlugin from './plugins/auth-hook.js';
 import workspacePlugin from './plugins/workspace-hook.js';
 import { authRoutes } from './modules/auth/routes.js';
@@ -28,6 +29,7 @@ import { cycleRoutes } from './modules/cycles/routes.js';
 import { moduleRoutes } from './modules/modules/routes.js';
 import { issueRelationRoutes } from './modules/issues/relations/routes.js';
 import { activityRoutes } from './modules/activity/routes.js';
+import { attachmentRoutes, attachmentDeleteRoutes } from './modules/attachments/routes.js';
 
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
@@ -76,6 +78,7 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(errorHandlerPlugin);
   await app.register(swaggerPlugin);
   await app.register(prismaPlugin);
+  await app.register(storagePlugin);
   await app.register(authPlugin);
   await app.register(workspacePlugin);
 
@@ -121,22 +124,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(activityRoutes, {
     prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/issues/:issueId/activity',
   });
+  await app.register(attachmentRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/issues/:issueId/attachments',
+  });
+  await app.register(attachmentDeleteRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/attachments',
+  });
 
   return app;
-}
-
-
-
-
-
-
-import React from 'react'
-
-export const app = (initialValue=null) => {
-
-let value = initialValue
-function setValue(newValue){
-  value=newValue
-}
-  return [value,setValue]
 }
