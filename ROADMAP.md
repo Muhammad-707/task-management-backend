@@ -6,9 +6,9 @@
 
 ## Current Status
 
-- **Current Phase:** Phase 3 — Collaboration & polish (Phase 2 complete)
-- **Last Session:** 2026-06-30
-- **Next Task:** Phase 3 → Email-based invites
+- **Current Phase:** Phase 3 — Collaboration & polish (almost done)
+- **Last Session:** 2026-07-01
+- **Next Task:** Phase 3 → OAuth login
 
 ---
 
@@ -62,7 +62,7 @@ These lock the TZ §12 open questions (per `CLAUDE.md`). Do not re-litigate duri
 
 - [x] Attachments — object storage (S3/MinIO), DB metadata only
 - [x] Notifications — generated on assign/mention/comment events; list + mark-read
-- [ ] Email-based invites
+- [x] Email-based invites
 - [ ] OAuth login
 
 ## Phase 4 — Pre-launch hardening

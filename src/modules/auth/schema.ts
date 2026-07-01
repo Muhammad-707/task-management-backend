@@ -7,6 +7,7 @@ export const RegisterBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   display_name: z.string().min(1).max(100),
+  invite_token: z.string().uuid().optional(),
 });
 
 export const LoginBodySchema = z.object({
@@ -54,7 +55,7 @@ const tokenPair = {
 
 export const registerRouteSchema: FastifySchema = {
   tags: ['Auth'],
-  summary: 'Register a new user',
+  summary: 'Register a new user (optionally with an invite_token to auto-join a workspace)',
   body: {
     type: 'object',
     required: ['email', 'password', 'display_name'],
@@ -62,6 +63,7 @@ export const registerRouteSchema: FastifySchema = {
       email: { type: 'string', format: 'email' },
       password: { type: 'string', minLength: 8 },
       display_name: { type: 'string', minLength: 1, maxLength: 100 },
+      invite_token: { type: 'string', format: 'uuid' },
     },
   },
   response: {
