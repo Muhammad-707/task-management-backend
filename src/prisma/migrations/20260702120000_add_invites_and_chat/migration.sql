@@ -7,22 +7,14 @@ CREATE TYPE "ContactStatus" AS ENUM ('pending', 'accepted', 'declined');
 -- CreateEnum
 CREATE TYPE "ConversationType" AS ENUM ('direct', 'group');
 
--- CreateTable
-CREATE TABLE "WorkspaceInvite" (
-    "id" TEXT NOT NULL,
-    "workspace_id" TEXT NOT NULL,
-    "email" TEXT NOT NULL,
-    "role" "WorkspaceRole" NOT NULL DEFAULT 'member',
-    "token" TEXT NOT NULL,
-    "invited_by_id" TEXT NOT NULL,
-    "status" "InviteStatus" NOT NULL DEFAULT 'pending',
-    "expires_at" TIMESTAMP(3) NOT NULL,
-    "accepted_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
+-- AlterTable: "WorkspaceInvite" already exists (created in 20260701065559_add_workspace_invites).
+-- Bring it in line with the current schema instead of recreating it (which caused P3009).
+ALTER TABLE "WorkspaceInvite" ADD COLUMN "status" "InviteStatus" NOT NULL DEFAULT 'pending';
+ALTER TABLE "WorkspaceInvite" ADD COLUMN "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "WorkspaceInvite" ALTER COLUMN "updated_at" DROP DEFAULT;
 
-    CONSTRAINT "WorkspaceInvite_pkey" PRIMARY KEY ("id")
-);
+-- Drop the redundant non-unique token index; the schema keeps only the unique constraint.
+DROP INDEX IF EXISTS "WorkspaceInvite_token_idx";
 
 -- CreateTable
 CREATE TABLE "Contact" (
@@ -71,15 +63,6 @@ CREATE TABLE "Message" (
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "WorkspaceInvite_token_key" ON "WorkspaceInvite"("token");
-
--- CreateIndex
-CREATE INDEX "WorkspaceInvite_workspace_id_idx" ON "WorkspaceInvite"("workspace_id");
-
--- CreateIndex
-CREATE INDEX "WorkspaceInvite_email_idx" ON "WorkspaceInvite"("email");
-
--- CreateIndex
 CREATE INDEX "Contact_addressee_id_idx" ON "Contact"("addressee_id");
 
 -- CreateIndex
@@ -96,12 +79,6 @@ CREATE INDEX "Message_conversation_id_created_at_idx" ON "Message"("conversation
 
 -- CreateIndex
 CREATE INDEX "Message_sender_id_idx" ON "Message"("sender_id");
-
--- AddForeignKey
-ALTER TABLE "WorkspaceInvite" ADD CONSTRAINT "WorkspaceInvite_workspace_id_fkey" FOREIGN KEY ("workspace_id") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "WorkspaceInvite" ADD CONSTRAINT "WorkspaceInvite_invited_by_id_fkey" FOREIGN KEY ("invited_by_id") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Contact" ADD CONSTRAINT "Contact_requester_id_fkey" FOREIGN KEY ("requester_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

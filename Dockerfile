@@ -37,5 +37,10 @@ COPY --from=build /app/src/prisma ./src/prisma
 
 USER node
 EXPOSE 3000
-# Apply pending migrations against the production DB, then start the server.
-CMD ["sh", "-c", "npx prisma migrate deploy --schema=src/prisma/schema.prisma && node dist/server.js"]
+# One-time self-heal: an earlier broken build left migration 20260702120000 in a
+# failed state (P3009), which blocks `migrate deploy`. Mark it rolled back (its DDL
+# already rolled back in-transaction) so the corrected version re-applies. The `|| true`
+# makes this a no-op once the migration is applied — safe to leave, but can be removed
+# after the first successful deploy.
+# Then apply pending migrations against the production DB and start the server.
+CMD ["sh", "-c", "npx prisma migrate resolve --rolled-back 20260702120000_add_invites_and_chat --schema=src/prisma/schema.prisma || true; npx prisma migrate deploy --schema=src/prisma/schema.prisma && node dist/server.js"]
