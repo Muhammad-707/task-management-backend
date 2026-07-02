@@ -57,7 +57,50 @@ export const envSchema = z
   SMTP_USER: z.string().min(1).optional(),
   SMTP_PASS: z.string().min(1).optional(),
   SMTP_FROM: z.string().min(1).optional(),
-});
+
+  // --- Attachment storage ---
+  // `local` (default) stores bytes on disk and serves them through internal API
+  // routes; `s3` uses an S3-compatible object store (AWS S3 / MinIO) with
+  // presigned URLs. The S3_* vars are required only when STORAGE_DRIVER=s3
+  // (enforced by the superRefine below).
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  /** Lifetime (seconds) of generated presigned upload/download URLs. */
+  STORAGE_PRESIGN_TTL: z.coerce.number().int().min(30).max(86400).default(900),
+  /** Max accepted upload size in bytes (default 25 MiB). */
+  ATTACHMENT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .default(25 * 1024 * 1024),
+
+  // local driver
+  LOCAL_STORAGE_DIR: z.string().min(1).default('./uploads'),
+
+  // s3 driver (optional unless STORAGE_DRIVER=s3)
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_REGION: z.string().min(1).default('us-east-1'),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /** MinIO and most non-AWS stores need path-style addressing. */
+  S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+})
+  .superRefine((env, ctx) => {
+    if (env.STORAGE_DRIVER === 's3') {
+      for (const key of ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
+        if (!env[key]) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [key],
+            message: `${key} is required when STORAGE_DRIVER=s3`,
+          });
+        }
+      }
+    }
+  });
 
 export type Env = z.infer<typeof envSchema>;
 

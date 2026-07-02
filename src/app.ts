@@ -28,6 +28,10 @@ import { issueRoutes } from './modules/issues/routes.js';
 import { commentRoutes } from './modules/comments/routes.js';
 import { cycleRoutes } from './modules/cycles/routes.js';
 import { moduleRoutes } from './modules/modules/routes.js';
+import { issueRelationRoutes } from './modules/issues/relations/routes.js';
+import { activityRoutes } from './modules/activity/routes.js';
+import { attachmentRoutes, attachmentDeleteRoutes } from './modules/attachments/routes.js';
+import { notificationRoutes } from './modules/notifications/routes.js';
 import websocket from '@fastify/websocket';
 import { workspaceInviteRoutes, publicInviteRoutes } from './modules/invites/routes.js';
 import {
@@ -40,6 +44,21 @@ import {
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
   logger?: LoggerOptions | boolean;
+}
+
+/**
+ * Whether `pino-pretty` is resolvable in the current install. It is a
+ * devDependency, so it is present in development but pruned in production
+ * (`npm install --omit=dev`). Guarding on this prevents a hard crash if the
+ * pretty transport is requested where the module is absent.
+ */
+function isPinoPrettyAvailable(): boolean {
+  try {
+    createRequire(import.meta.url).resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -151,7 +170,6 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(notificationRoutes, {
     prefix: '/api/v1/workspaces/:workspaceSlug/notifications',
   });
-  await app.register(inviteRoutes, { prefix: '/api/v1/invites' });
 
   // Invites — public magic-link accept + workspace-scoped management.
   await app.register(publicInviteRoutes, { prefix: '/api/v1/invites' });
