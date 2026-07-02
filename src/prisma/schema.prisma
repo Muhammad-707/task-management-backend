@@ -448,3 +448,57 @@ model Message {
   @@index([conversation_id, created_at])
   @@index([sender_id])
 }
+
+model IssueLink {
+  id            String        @id @default(uuid())
+  type          IssueLinkType
+  source_id     String
+  target_id     String
+  created_at    DateTime      @default(now())
+  updated_at    DateTime      @updatedAt
+
+  source_issue  Issue         @relation("IssueLinkSource", fields: [source_id], references: [id], onDelete: Cascade)
+  target_issue  Issue         @relation("IssueLinkTarget", fields: [target_id], references: [id], onDelete: Cascade)
+
+  @@unique([source_id, target_id, type])
+}
+
+model ActivityLog {
+  id          String   @id @default(uuid())
+  issue_id    String
+  actor_id    String
+  action      String
+  old_value   String?
+  new_value   String?
+  created_at  DateTime @default(now())
+
+  issue       Issue    @relation(fields: [issue_id], references: [id], onDelete: Cascade)
+  actor       User     @relation(fields: [actor_id], references: [id], onDelete: Cascade)
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  issue_id    String
+  file_name   String
+  file_key    String
+  file_size   Int
+  mime_type   String
+  uploaded_by String
+  created_at  DateTime @default(now())
+
+  issue       Issue    @relation(fields: [issue_id], references: [id], onDelete: Cascade)
+  uploader    User     @relation(fields: [uploaded_by], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipient_id String
+  type        NotificationType
+  title       String
+  message     String
+  is_read     Boolean          @default(false)
+  link        String?
+  created_at  DateTime         @default(now())
+
+  recipient   User             @relation(fields: [recipient_id], references: [id], onDelete: Cascade)
+}
