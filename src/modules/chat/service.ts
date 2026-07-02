@@ -1,0 +1,354 @@
+import type { PrismaClient, Contact, Conversation, Message } from '@prisma/client';
+import { AppError } from '../../lib/errors.js';
+import type { CreateGroupBody } from './schema.js';
+
+// Public projection of a user — never leaks password_hash etc.
+const publicUser = { id: true, email: true, display_name: true, avatar_url: true } as const;
+
+export interface MessageWithSender extends Message {
+  sender: { id: string; email: string; display_name: string; avatar_url: string | null };
+}
+
+/** A created message plus the recipients that should receive a real-time push. */
+export interface CreatedMessage {
+  message: MessageWithSender;
+  memberIds: string[];
+}
+
+// ─── Contacts ───────────────────────────────────────────────────────────────
+
+export async function sendContactRequest(
+  prisma: PrismaClient,
+  requesterId: string,
+  addresseeId: string,
+): Promise<Contact> {
+  if (requesterId === addresseeId) {
+    throw AppError.badRequest('You cannot send a contact request to yourself');
+  }
+
+  const addressee = await prisma.user.findUnique({ where: { id: addresseeId } });
+  if (!addressee) throw AppError.notFound('User not found');
+
+  // If the other side already requested us, accept that instead of creating a
+  // mirror request (spec: auto-accept when the reverse request exists).
+  const reverse = await prisma.contact.findUnique({
+    where: { requester_id_addressee_id: { requester_id: addresseeId, addressee_id: requesterId } },
+  });
+  if (reverse) {
+    if (reverse.status === 'accepted') throw AppError.conflict('You are already contacts');
+    if (reverse.status === 'pending') {
+      return prisma.contact.update({
+        where: { id: reverse.id },
+        data: { status: 'accepted', responded_at: new Date() },
+      });
+    }
+    // reverse was declined → fall through and let this side make its own request.
+  }
+
+  const forward = await prisma.contact.findUnique({
+    where: { requester_id_addressee_id: { requester_id: requesterId, addressee_id: addresseeId } },
+  });
+  if (forward) {
+    if (forward.status === 'pending') throw AppError.conflict('Contact request already sent');
+    if (forward.status === 'accepted') throw AppError.conflict('You are already contacts');
+    // Previously declined → re-open it as a fresh pending request.
+    return prisma.contact.update({
+      where: { id: forward.id },
+      data: { status: 'pending', responded_at: null },
+    });
+  }
+
+  return prisma.contact.create({
+    data: { requester_id: requesterId, addressee_id: addresseeId, status: 'pending' },
+  });
+}
+
+export async function listContactRequests(
+  prisma: PrismaClient,
+  userId: string,
+  direction: 'incoming' | 'outgoing',
+): Promise<Contact[]> {
+  if (direction === 'incoming') {
+    return prisma.contact.findMany({
+      where: { addressee_id: userId, status: 'pending' },
+      include: { requester: { select: publicUser } },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+  return prisma.contact.findMany({
+    where: { requester_id: userId, status: 'pending' },
+    include: { addressee: { select: publicUser } },
+    orderBy: { created_at: 'desc' },
+  });
+}
+
+export async function respondToContactRequest(
+  prisma: PrismaClient,
+  userId: string,
+  contactId: string,
+  accept: boolean,
+): Promise<Contact> {
+  const contact = await prisma.contact.findUnique({ where: { id: contactId } });
+  // Only the addressee of a still-pending request may respond.
+  if (!contact || contact.addressee_id !== userId || contact.status !== 'pending') {
+    throw AppError.notFound('Contact request not found');
+  }
+  return prisma.contact.update({
+    where: { id: contactId },
+    data: { status: accept ? 'accepted' : 'declined', responded_at: new Date() },
+  });
+}
+
+export async function listContacts(prisma: PrismaClient, userId: string): Promise<unknown[]> {
+  const contacts = await prisma.contact.findMany({
+    where: {
+      status: 'accepted',
+      OR: [{ requester_id: userId }, { addressee_id: userId }],
+    },
+    include: { requester: { select: publicUser }, addressee: { select: publicUser } },
+    orderBy: { responded_at: 'desc' },
+  });
+
+  // Surface the "other" party as `contact`, regardless of who initiated.
+  return contacts.map((c) => ({
+    id: c.id,
+    since: c.responded_at,
+    contact: c.requester_id === userId ? c.addressee : c.requester,
+  }));
+}
+
+/** Throw 403 unless the two users are accepted contacts. */
+async function assertAcceptedContact(prisma: PrismaClient, a: string, b: string): Promise<void> {
+  const contact = await prisma.contact.findFirst({
+    where: {
+      status: 'accepted',
+      OR: [
+        { requester_id: a, addressee_id: b },
+        { requester_id: b, addressee_id: a },
+      ],
+    },
+  });
+  if (!contact) {
+    throw AppError.forbidden('You can only start a direct chat with an accepted contact');
+  }
+}
+
+// ─── Conversations ────────────────────────────────────────────────────────────
+
+/** Assert the user is a member of the conversation; returns the conversation. */
+async function assertConversationMember(
+  prisma: PrismaClient,
+  userId: string,
+  conversationId: string,
+): Promise<Conversation> {
+  const conversation = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conversation) throw AppError.notFound('Conversation not found');
+
+  const membership = await prisma.conversationMember.findUnique({
+    where: { conversation_id_user_id: { conversation_id: conversationId, user_id: userId } },
+  });
+  if (!membership) throw AppError.forbidden('You are not a member of this conversation');
+
+  return conversation;
+}
+
+export async function createDirectConversation(
+  prisma: PrismaClient,
+  userId: string,
+  otherUserId: string,
+): Promise<Conversation> {
+  if (userId === otherUserId) {
+    throw AppError.badRequest('You cannot open a conversation with yourself');
+  }
+  await assertAcceptedContact(prisma, userId, otherUserId);
+
+  // Find an existing direct conversation containing exactly these two users.
+  const existing = await prisma.conversation.findFirst({
+    where: {
+      type: 'direct',
+      AND: [
+        { members: { some: { user_id: userId } } },
+        { members: { some: { user_id: otherUserId } } },
+      ],
+    },
+    include: { members: { include: { user: { select: publicUser } } } },
+  });
+  if (existing) return existing;
+
+  return prisma.conversation.create({
+    data: {
+      type: 'direct',
+      created_by_id: userId,
+      members: {
+        create: [{ user_id: userId }, { user_id: otherUserId }],
+      },
+    },
+    include: { members: { include: { user: { select: publicUser } } } },
+  });
+}
+
+export async function createGroupConversation(
+  prisma: PrismaClient,
+  workspaceId: string,
+  creatorId: string,
+  body: CreateGroupBody,
+): Promise<Conversation> {
+  // Every listed member (and the creator) must belong to the workspace.
+  const memberIds = Array.from(new Set([creatorId, ...body.member_ids]));
+
+  const workspaceMembers = await prisma.workspaceMember.findMany({
+    where: { workspace_id: workspaceId, user_id: { in: memberIds } },
+    select: { user_id: true },
+  });
+  if (workspaceMembers.length !== memberIds.length) {
+    throw AppError.badRequest('All members must belong to this workspace');
+  }
+
+  return prisma.conversation.create({
+    data: {
+      type: 'group',
+      workspace_id: workspaceId,
+      name: body.name,
+      created_by_id: creatorId,
+      members: { create: memberIds.map((user_id) => ({ user_id })) },
+    },
+    include: { members: { include: { user: { select: publicUser } } } },
+  });
+}
+
+export async function addConversationMember(
+  prisma: PrismaClient,
+  userId: string,
+  conversationId: string,
+  newUserId: string,
+): Promise<void> {
+  const conversation = await assertConversationMember(prisma, userId, conversationId);
+  if (conversation.type !== 'group') {
+    throw AppError.badRequest('Members can only be added to group conversations');
+  }
+
+  // The new member must belong to the conversation's workspace.
+  if (conversation.workspace_id) {
+    const membership = await prisma.workspaceMember.findUnique({
+      where: {
+        workspace_id_user_id: { workspace_id: conversation.workspace_id, user_id: newUserId },
+      },
+    });
+    if (!membership) throw AppError.badRequest('New member must belong to this workspace');
+  }
+
+  const existing = await prisma.conversationMember.findUnique({
+    where: { conversation_id_user_id: { conversation_id: conversationId, user_id: newUserId } },
+  });
+  if (existing) throw AppError.conflict('User is already in this conversation');
+
+  await prisma.conversationMember.create({
+    data: { conversation_id: conversationId, user_id: newUserId },
+  });
+}
+
+export async function listConversations(prisma: PrismaClient, userId: string): Promise<unknown[]> {
+  const conversations = await prisma.conversation.findMany({
+    where: { members: { some: { user_id: userId } } },
+    include: {
+      members: { include: { user: { select: publicUser } } },
+      messages: {
+        orderBy: { created_at: 'desc' },
+        take: 1,
+        include: { sender: { select: publicUser } },
+      },
+    },
+    orderBy: { updated_at: 'desc' },
+  });
+
+  return conversations.map((c) => ({
+    id: c.id,
+    type: c.type,
+    name: c.name,
+    workspace_id: c.workspace_id,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
+    members: c.members.map((m) => m.user),
+    last_message: c.messages[0] ?? null,
+  }));
+}
+
+export async function getConversation(
+  prisma: PrismaClient,
+  userId: string,
+  conversationId: string,
+): Promise<unknown> {
+  await assertConversationMember(prisma, userId, conversationId);
+  const conversation = await prisma.conversation.findUniqueOrThrow({
+    where: { id: conversationId },
+    include: { members: { include: { user: { select: publicUser } } } },
+  });
+  return {
+    id: conversation.id,
+    type: conversation.type,
+    name: conversation.name,
+    workspace_id: conversation.workspace_id,
+    created_by_id: conversation.created_by_id,
+    created_at: conversation.created_at,
+    updated_at: conversation.updated_at,
+    members: conversation.members.map((m) => ({ ...m.user, joined_at: m.joined_at })),
+  };
+}
+
+export async function listMessages(
+  prisma: PrismaClient,
+  userId: string,
+  conversationId: string,
+  cursor: string | undefined,
+  limit: number,
+): Promise<{ data: MessageWithSender[]; next_cursor: string | null }> {
+  await assertConversationMember(prisma, userId, conversationId);
+
+  const messages = await prisma.message.findMany({
+    where: { conversation_id: conversationId },
+    include: { sender: { select: publicUser } },
+    // Newest → oldest. Tiebreak on id so the cursor is deterministic.
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    take: limit + 1,
+    ...(cursor && { cursor: { id: cursor }, skip: 1 }),
+  });
+
+  const hasMore = messages.length > limit;
+  const data = hasMore ? messages.slice(0, limit) : messages;
+  const next_cursor = hasMore ? (data[data.length - 1]?.id ?? null) : null;
+
+  return { data, next_cursor };
+}
+
+/**
+ * Create a message. Enforces conversation membership, bumps the conversation's
+ * `updated_at` (so it sorts to the top of the list), and returns the message
+ * along with the member ids to notify in real time. The caller is responsible
+ * for the actual fan-out (via the chat hub) so this stays pure/data-only.
+ */
+export async function createMessage(
+  prisma: PrismaClient,
+  senderId: string,
+  conversationId: string,
+  body: string,
+): Promise<CreatedMessage> {
+  await assertConversationMember(prisma, senderId, conversationId);
+
+  const [message] = await prisma.$transaction([
+    prisma.message.create({
+      data: { conversation_id: conversationId, sender_id: senderId, body },
+      include: { sender: { select: publicUser } },
+    }),
+    prisma.conversation.update({
+      where: { id: conversationId },
+      data: { updated_at: new Date() },
+    }),
+  ]);
+
+  const members = await prisma.conversationMember.findMany({
+    where: { conversation_id: conversationId },
+    select: { user_id: true },
+  });
+
+  return { message, memberIds: members.map((m) => m.user_id) };
+}

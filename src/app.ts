@@ -28,21 +28,14 @@ import { issueRoutes } from './modules/issues/routes.js';
 import { commentRoutes } from './modules/comments/routes.js';
 import { cycleRoutes } from './modules/cycles/routes.js';
 import { moduleRoutes } from './modules/modules/routes.js';
-import { issueRelationRoutes } from './modules/issues/relations/routes.js';
-import { activityRoutes } from './modules/activity/routes.js';
-import { attachmentRoutes, attachmentDeleteRoutes } from './modules/attachments/routes.js';
-import { notificationRoutes } from './modules/notifications/routes.js';
-import { inviteRoutes } from './modules/invites/routes.js';
-
-/** True when the optional `pino-pretty` transport can be resolved at runtime. */
-function isPinoPrettyAvailable(): boolean {
-  try {
-    createRequire(import.meta.url).resolve('pino-pretty');
-    return true;
-  } catch {
-    return false;
-  }
-}
+import websocket from '@fastify/websocket';
+import { workspaceInviteRoutes, publicInviteRoutes } from './modules/invites/routes.js';
+import {
+  contactRoutes,
+  conversationRoutes,
+  workspaceConversationRoutes,
+  chatWsRoutes,
+} from './modules/chat/routes.js';
 
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
@@ -103,6 +96,9 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(storagePlugin);
   await app.register(authPlugin);
   await app.register(workspacePlugin);
+  // WebSocket support (chat real-time). Must be registered before any route that
+  // opts in via `{ websocket: true }`.
+  await app.register(websocket);
 
   // --- Routes ----------------------------------------------------------------
   // Liveness/readiness probe. Liveness always returns ok if the process is up;
@@ -156,6 +152,20 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
     prefix: '/api/v1/workspaces/:workspaceSlug/notifications',
   });
   await app.register(inviteRoutes, { prefix: '/api/v1/invites' });
+
+  // Invites — public magic-link accept + workspace-scoped management.
+  await app.register(publicInviteRoutes, { prefix: '/api/v1/invites' });
+  await app.register(workspaceInviteRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/invites',
+  });
+
+  // Chat — contacts, conversations, group creation, and the real-time socket.
+  await app.register(contactRoutes, { prefix: '/api/v1/contacts' });
+  await app.register(conversationRoutes, { prefix: '/api/v1/conversations' });
+  await app.register(workspaceConversationRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/conversations',
+  });
+  await app.register(chatWsRoutes, { prefix: '/api/v1/ws' });
 
   return app;
 }
