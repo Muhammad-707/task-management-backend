@@ -11,10 +11,12 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { LoggerOptions } from 'pino';
+import { createRequire } from 'node:module';
 import { config, isDev, isProd } from './config/index.js';
 import errorHandlerPlugin from './plugins/error-handler.js';
 import swaggerPlugin from './plugins/swagger.js';
 import prismaPlugin from './plugins/prisma.js';
+import storagePlugin from './plugins/storage.js';
 import authPlugin from './plugins/auth-hook.js';
 import workspacePlugin from './plugins/workspace-hook.js';
 import { authRoutes } from './modules/auth/routes.js';
@@ -26,6 +28,14 @@ import { issueRoutes } from './modules/issues/routes.js';
 import { commentRoutes } from './modules/comments/routes.js';
 import { cycleRoutes } from './modules/cycles/routes.js';
 import { moduleRoutes } from './modules/modules/routes.js';
+import websocket from '@fastify/websocket';
+import { workspaceInviteRoutes, publicInviteRoutes } from './modules/invites/routes.js';
+import {
+  contactRoutes,
+  conversationRoutes,
+  workspaceConversationRoutes,
+  chatWsRoutes,
+} from './modules/chat/routes.js';
 
 export interface BuildAppOptions {
   /** Pino logger options, or `false`/`true` to disable/enable the default logger. */
@@ -45,7 +55,12 @@ function defaultLogger(): LoggerOptions | boolean {
 
   const level = config.LOG_LEVEL ?? (isDev ? 'debug' : 'info');
 
-  if (isDev) {
+  // Pretty-print only in development AND only when pino-pretty is actually
+  // installed. In production it is omitted (devDependency, pruned by
+  // `npm install --omit=dev`); guarding here prevents a hard crash if the
+  // environment is misconfigured (e.g. NODE_ENV left at its development
+  // default on a production host).
+  if (isDev && isPinoPrettyAvailable()) {
     return {
       level,
       transport: {
@@ -78,8 +93,12 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(errorHandlerPlugin);
   await app.register(swaggerPlugin);
   await app.register(prismaPlugin);
+  await app.register(storagePlugin);
   await app.register(authPlugin);
   await app.register(workspacePlugin);
+  // WebSocket support (chat real-time). Must be registered before any route that
+  // opts in via `{ websocket: true }`.
+  await app.register(websocket);
 
   // --- Routes ----------------------------------------------------------------
   // Liveness/readiness probe. Liveness always returns ok if the process is up;
@@ -117,6 +136,36 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
   await app.register(moduleRoutes, {
     prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/modules',
   });
+  await app.register(issueRelationRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/issues/:issueId/relations',
+  });
+  await app.register(activityRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/issues/:issueId/activity',
+  });
+  await app.register(attachmentRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/issues/:issueId/attachments',
+  });
+  await app.register(attachmentDeleteRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/projects/:projectId/attachments',
+  });
+  await app.register(notificationRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/notifications',
+  });
+  await app.register(inviteRoutes, { prefix: '/api/v1/invites' });
+
+  // Invites — public magic-link accept + workspace-scoped management.
+  await app.register(publicInviteRoutes, { prefix: '/api/v1/invites' });
+  await app.register(workspaceInviteRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/invites',
+  });
+
+  // Chat — contacts, conversations, group creation, and the real-time socket.
+  await app.register(contactRoutes, { prefix: '/api/v1/contacts' });
+  await app.register(conversationRoutes, { prefix: '/api/v1/conversations' });
+  await app.register(workspaceConversationRoutes, {
+    prefix: '/api/v1/workspaces/:workspaceSlug/conversations',
+  });
+  await app.register(chatWsRoutes, { prefix: '/api/v1/ws' });
 
   return app;
 }
