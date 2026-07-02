@@ -46,6 +46,24 @@ enum ModuleStatus {
   cancelled
 }
 
+enum InviteStatus {
+  pending
+  accepted
+  expired
+  revoked
+}
+
+enum ContactStatus {
+  pending
+  accepted
+  declined
+}
+
+enum ConversationType {
+  direct
+  group
+}
+
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
@@ -67,6 +85,13 @@ model User {
   created_issues        Issue[]           @relation("IssueCreatedBy")
   assigned_issues       IssueAssignee[]
   comments              Comment[]
+
+  created_invites       WorkspaceInvite[]     @relation("InviteCreatedBy")
+  contact_requests_sent     Contact[]         @relation("ContactRequester")
+  contact_requests_received Contact[]         @relation("ContactAddressee")
+  created_conversations Conversation[]        @relation("ConversationCreatedBy")
+  conversation_members  ConversationMember[]
+  sent_messages         Message[]
 }
 
 // Rotating refresh tokens. One row per live token; revoked_at set on logout/rotation.
@@ -98,6 +123,8 @@ model Workspace {
   issues   Issue[]
   cycles   Cycle[]
   modules  Module[]
+  invites  WorkspaceInvite[]
+  conversations Conversation[]
 }
 
 model WorkspaceMember {
@@ -328,4 +355,91 @@ model ModuleIssue {
 
   @@id([module_id, issue_id])
   @@index([issue_id])
+}
+
+// ─── Invites (email + magic-link) ────────────────────────────────────────────
+
+// A pending invitation to join a workspace by email. The opaque `token` backs
+// the public magic-link accept endpoint (GET /invites/:token/accept).
+model WorkspaceInvite {
+  id            String       @id @default(uuid())
+  workspace_id  String
+  email         String
+  role          WorkspaceRole @default(member)
+  token         String       @unique
+  invited_by_id String
+  status        InviteStatus @default(pending)
+  expires_at    DateTime
+  accepted_at   DateTime?
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+
+  workspace  Workspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  invited_by User      @relation("InviteCreatedBy", fields: [invited_by_id], references: [id])
+
+  @@index([workspace_id])
+  @@index([email])
+}
+
+// ─── Chat (contacts + conversations + messages) ──────────────────────────────
+
+// A directed friendship request that becomes a mutual contact once accepted.
+model Contact {
+  id            String        @id @default(uuid())
+  requester_id  String
+  addressee_id  String
+  status        ContactStatus @default(pending)
+  created_at    DateTime      @default(now())
+  responded_at  DateTime?
+
+  requester User @relation("ContactRequester", fields: [requester_id], references: [id], onDelete: Cascade)
+  addressee User @relation("ContactAddressee", fields: [addressee_id], references: [id], onDelete: Cascade)
+
+  @@unique([requester_id, addressee_id])
+  @@index([addressee_id])
+}
+
+// A 1:1 (direct) or group conversation. Group conversations are workspace-scoped.
+model Conversation {
+  id            String           @id @default(uuid())
+  type          ConversationType
+  workspace_id  String?
+  name          String?
+  created_by_id String
+  created_at    DateTime         @default(now())
+  updated_at    DateTime         @updatedAt
+
+  workspace  Workspace?           @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
+  created_by User                 @relation("ConversationCreatedBy", fields: [created_by_id], references: [id])
+  members    ConversationMember[]
+  messages   Message[]
+
+  @@index([workspace_id])
+}
+
+model ConversationMember {
+  conversation_id String
+  user_id         String
+  joined_at       DateTime  @default(now())
+  last_read_at    DateTime?
+
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([conversation_id, user_id])
+  @@index([user_id])
+}
+
+model Message {
+  id              String   @id @default(uuid())
+  conversation_id String
+  sender_id       String
+  body            String
+  created_at      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+
+  @@index([conversation_id, created_at])
+  @@index([sender_id])
 }

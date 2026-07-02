@@ -40,6 +40,22 @@ export const envSchema = z.object({
 
   // --- CORS --- (comma-separated origins, or `*`; configured per environment)
   CORS_ORIGIN: z.string().min(1).default('*'),
+
+  // --- Public URL --- (used to build absolute links in emails, e.g. invite magic-links)
+  PUBLIC_BASE_URL: z.string().url().default('http://localhost:3000'),
+
+  // --- SMTP / email --- (all optional; when host is set, real emails are sent
+  // via nodemailer, otherwise dev/test log to the console and production throws)
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  // Coerce the usual truthy string forms; anything else (incl. unset) is false.
+  SMTP_SECURE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true' || v === '1'),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASS: z.string().min(1).optional(),
+  SMTP_FROM: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
